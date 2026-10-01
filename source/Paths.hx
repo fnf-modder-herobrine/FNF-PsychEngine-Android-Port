@@ -331,11 +331,30 @@ class Paths
 	}
 
 	// completely rewritten asset loading? fuck!
-	public static var currentTrackedAssets:Map<String, FlxGraphic> = [];
+		public static var currentTrackedAssets:Map<String, FlxGraphic> = [];
 	public static function returnGraphic(key:String, ?library:String) {
 		#if MODS_ALLOWED
-		var modKey:String = modsImages(key);
-		if(FileSystem.exists(modKey)) {
+		// Sistema de Mods para Android (Checa .astc primeiro, depois .png)
+		var modKey:String = modsImages(key); // Caminho padrão .png
+		var modKeyAstc:String = modKey.substring(0, modKey.length - 4) + ".astc"; // Caminho trocando para .astc
+
+		// Se o arquivo .astc existir na pasta de mods
+		if(FileSystem.exists(modKeyAstc)) {
+			if(!currentTrackedAssets.exists(modKeyAstc)) {
+				#if android
+				var newBitmap:BitmapData = ASTCBitmapData.fromFile(modKeyAstc);
+				#else
+				var newBitmap:BitmapData = BitmapData.fromFile(modKey);
+				#end
+				var newGraphic:FlxGraphic = FlxGraphic.fromBitmapData(newBitmap, false, modKeyAstc);
+				newGraphic.persist = true;
+				currentTrackedAssets.set(modKeyAstc, newGraphic);
+			}
+			localTrackedAssets.push(modKeyAstc);
+			return currentTrackedAssets.get(modKeyAstc);
+		}
+		// Se não existir .astc, carrega o .png normal do Mod
+		else if(FileSystem.exists(modKey)) {
 			if(!currentTrackedAssets.exists(modKey)) {
 				var newBitmap:BitmapData = BitmapData.fromFile(modKey);
 				var newGraphic:FlxGraphic = FlxGraphic.fromBitmapData(newBitmap, false, modKey);
@@ -347,8 +366,25 @@ class Paths
 		}
 		#end
 
-		var path = getPath('images/$key.png', IMAGE, library);
-		//trace(path);
+		// Sistema de Assets nativos do APK
+		var path:String = getPath('images/$key.png', IMAGE, library);
+		var pathAstc:String = getPath('images/$key.astc', IMAGE, library);
+
+		#if android
+		// No Android, tenta carregar o .astc nativo primeiro
+		if (OpenFlAssets.exists(pathAstc, IMAGE)) {
+			if(!currentTrackedAssets.exists(pathAstc)) {
+				var newBitmap:BitmapData = ASTCBitmapData.fromFile(pathAstc);
+				var newGraphic:FlxGraphic = FlxGraphic.fromBitmapData(newBitmap, false, pathAstc);
+				newGraphic.persist = true;
+				currentTrackedAssets.set(pathAstc, newGraphic);
+			}
+			localTrackedAssets.push(pathAstc);
+			return currentTrackedAssets.get(pathAstc);
+		}
+		#end
+
+		// Se não for Android ou não achar o .astc, usa o .png original
 		if (OpenFlAssets.exists(path, IMAGE)) {
 			if(!currentTrackedAssets.exists(path)) {
 				var newGraphic:FlxGraphic = FlxG.bitmap.add(path, false, path);
@@ -358,6 +394,7 @@ class Paths
 			localTrackedAssets.push(path);
 			return currentTrackedAssets.get(path);
 		}
+
 		trace('oh no its returning null NOOOO');
 		return null;
 	}
